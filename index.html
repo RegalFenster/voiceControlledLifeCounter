@@ -201,6 +201,7 @@
   <span>Alarm after</span>
   <input type="number" id="autoStopInput" min="1" value="5">
   <span>min per turn</span>
+  <select id="alarmSoundSelect"></select>
 </div>
 
 <div class="total-row" id="namedTotalRow">
@@ -239,7 +240,7 @@
 
 <script>
 const state = {
-  people: [], alarmMs: 5*60*1000, mode: 'named',
+  people: [], alarmMs: 5*60*1000, mode: 'named', alarmSound: 'oven-beep',
   // turn-based mode has no roster - just one round timer that resets on "next"
   turn: { round: 0, running: false, startedAt: null, elapsedMs: 0, totalMs: 0, alarming: false, lastBeepAt: 0 }
 }; // {id, name, running, elapsedMs, startedAt}
@@ -261,21 +262,71 @@ function turnElapsed(p){
   return p.running ? (Date.now() - p.startedAt) : (p.lastTurnMs || 0);
 }
 
+let audioCtx = null;
+function getAudioCtx(){
+  if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+// single discrete pip, e.g. "beep-beep-beep"
+function scheduleTone(c, {t, dur, type='square', freq=800, gain=0.22, attack=0.008, release=0.02}){
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = type; o.connect(g); g.connect(c.destination);
+  const t0 = c.currentTime + t;
+  o.frequency.setValueAtTime(freq, t0);
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(gain, t0 + attack);
+  g.gain.setValueAtTime(gain, Math.max(t0 + attack, t0 + dur - release));
+  g.gain.linearRampToValueAtTime(0, t0 + dur);
+  o.start(t0); o.stop(t0 + dur + 0.02);
+}
+
+// continuous tone gliding through a sequence of frequency segments, e.g. a siren yelp
+function scheduleSweep(c, {t, segs, type='square', gain=0.22}){
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = type; o.connect(g); g.connect(c.destination);
+  const t0 = c.currentTime + t;
+  let cursor = t0;
+  o.frequency.setValueAtTime(segs[0].freq, t0);
+  segs.forEach(seg => { cursor += seg.dur; o.frequency.linearRampToValueAtTime(seg.freq, cursor); });
+  g.gain.setValueAtTime(gain, t0);
+  g.gain.setValueAtTime(gain, cursor - 0.03);
+  g.gain.linearRampToValueAtTime(0, cursor);
+  o.start(t0); o.stop(cursor + 0.02);
+}
+
+// each preset's `interval` is how often checkAlarm/checkTurnAlarm should retrigger it (ms),
+// long enough for its own pattern to finish before it repeats
+const soundPresets = {
+  'oven-beep': { label: 'Timer Beep', interval: 900,
+    play(c){ [0,0.25,0.5].forEach(t => scheduleTone(c, {t, dur:0.15, type:'sine', freq:880, gain:0.22, attack:0.02, release:0.05})); } },
+  'siren-sweep': { label: 'Yelp Siren', interval: 400,
+    play(c){ scheduleSweep(c, {t:0, gain:0.22, type:'square', segs:[{freq:1000,dur:0},{freq:600,dur:0.12},{freq:1000,dur:0.12}]}); } },
+  'smoke-detector': { label: 'Smoke Alarm', interval: 1100,
+    play(c){ [0,0.2,0.4].forEach(t => scheduleTone(c, {t, dur:0.1, type:'square', freq:3150, gain:0.18, attack:0.003, release:0.01})); } },
+  'ambulance': { label: 'Hi-Lo Siren', interval: 2000,
+    play(c){ for(let i=0;i<4;i++) scheduleTone(c, {t:i*0.5, dur:0.48, type:'sawtooth', freq: i%2===0?440:554.37, gain:0.2, attack:0.01, release:0.03}); } },
+  'alarm-clock': { label: 'Alarm Clock', interval: 1400,
+    play(c){ for(let i=0;i<8;i++) scheduleTone(c, {t:i*0.16, dur:0.08, type:'square', freq:1200, gain:0.2, attack:0.004, release:0.01}); } },
+  'buzzer': { label: 'Klaxon', interval: 1100,
+    play(c){ scheduleTone(c, {t:0, dur:1.0, type:'sawtooth', freq:150, gain:0.2, attack:0.01, release:0.08}); } },
+  'escalation': { label: 'Rising Tone', interval: 800,
+    play(c){ [523.25,659.25,783.99,1046.5].forEach((f,i) => scheduleTone(c, {t:i*0.15, dur:0.15, type:'triangle', freq:f, gain:0.22, attack:0.01, release:0.03})); } },
+  'sos-morse': { label: 'SOS Morse', interval: 2700,
+    play(c){ const dot=0.1, dash=0.3, gap=0.1; let t=0; [dot,dot,dot,dash,dash,dash,dot,dot,dot].forEach(d => { scheduleTone(c, {t, dur:d, type:'square', freq:900, gain:0.2, attack:0.005, release:0.01}); t += d+gap; }); } },
+  'bell-chime': { label: 'Bell Chime', interval: 1400,
+    play(c){ [1,2,3.01].forEach((mul,i) => scheduleTone(c, {t:0, dur:1.2, type:'sine', freq:523.25*mul, gain:0.16/(i+1), attack:0.005, release:1.0})); } },
+  'civil-defense': { label: 'Air Raid', interval: 5800,
+    play(c){ for(let i=0;i<2;i++) scheduleSweep(c, {t:i*2.8, gain:0.2, type:'sawtooth', segs:[{freq:220,dur:0},{freq:880,dur:1.4},{freq:220,dur:1.4}]}); } },
+};
+
+function currentSoundPreset(){
+  return soundPresets[state.alarmSound] || soundPresets['oven-beep'];
+}
+
 function beep(){
-  try{
-    const ctx = new (window.AudioContext||window.webkitAudioContext)();
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
-    o.type = 'square'; // harsher/buzzier than a sine, reads as more urgent
-    // quick up-down sweep per beep, like a siren yelp instead of a flat tone
-    o.frequency.setValueAtTime(1000, ctx.currentTime);
-    o.frequency.linearRampToValueAtTime(600, ctx.currentTime + 0.12);
-    o.frequency.linearRampToValueAtTime(1000, ctx.currentTime + 0.24);
-    g.gain.value = 0.22;
-    o.start();
-    setTimeout(()=>{ o.stop(); ctx.close(); }, 260);
-  }catch(e){}
+  try{ currentSoundPreset().play(getAudioCtx()); }catch(e){}
 }
 
 function checkAlarm(){
@@ -286,7 +337,7 @@ function checkAlarm(){
         p.alarming = true;
         heard.textContent = `⏱ "${p.name}" reached the alarm time — say stop or start a new name to silence it`;
       }
-      if(!p.lastBeepAt || Date.now() - p.lastBeepAt >= 400){
+      if(!p.lastBeepAt || Date.now() - p.lastBeepAt >= currentSoundPreset().interval){
         beep();
         p.lastBeepAt = Date.now();
       }
@@ -303,7 +354,7 @@ function checkTurnAlarm(){
       t.alarming = true;
       heard.textContent = `⏱ Round ${t.round} reached the alarm time — say "next" to continue`;
     }
-    if(!t.lastBeepAt || Date.now() - t.lastBeepAt >= 400){
+    if(!t.lastBeepAt || Date.now() - t.lastBeepAt >= currentSoundPreset().interval){
       beep();
       t.lastBeepAt = Date.now();
     }
@@ -523,6 +574,18 @@ document.getElementById('nameInput').addEventListener('keydown', e => {
 document.getElementById('autoStopInput').addEventListener('input', e => {
   const minutes = Math.max(1, Number(e.target.value) || 1);
   state.alarmMs = minutes * 60 * 1000;
+});
+
+const alarmSoundSelect = document.getElementById('alarmSoundSelect');
+Object.entries(soundPresets).forEach(([id, preset]) => {
+  const opt = document.createElement('option');
+  opt.value = id;
+  opt.textContent = preset.label;
+  if(id === state.alarmSound) opt.selected = true;
+  alarmSoundSelect.appendChild(opt);
+});
+alarmSoundSelect.addEventListener('change', e => {
+  state.alarmSound = e.target.value;
 });
 
 // --- Speech recognition ---
