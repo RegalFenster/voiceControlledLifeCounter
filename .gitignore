@@ -29,3 +29,9 @@ npm-debug.log*
 *.apk
 *.aab
 *.iml
+*.hprof
+
+# Vosk speech model - too big for git (single files exceed GitHub's 100MB limit).
+# Run android-app/scripts/setup-model.sh to download it before building.
+android-app/app/src/main/assets/model-de/
+android-app/app/src/main/assets/model-en/
