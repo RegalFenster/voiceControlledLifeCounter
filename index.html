@@ -172,7 +172,7 @@
 </div>
 
 <div class="settings-row">
-  <span>Auto-stop after</span>
+  <span>Alarm after</span>
   <input type="number" id="autoStopInput" min="1" value="5">
   <span>min per turn</span>
 </div>
@@ -190,7 +190,7 @@
 <div id="list"></div>
 
 <script>
-const state = { people: [], autoStopMs: 5*60*1000 }; // {id, name, running, elapsedMs, startedAt}
+const state = { people: [], alarmMs: 5*60*1000 }; // {id, name, running, elapsedMs, startedAt}
 let tickHandle = null;
 
 function fmt(ms){
@@ -222,12 +222,18 @@ function beep(){
   }catch(e){}
 }
 
-function checkAutoStop(){
+function checkAlarm(){
   state.people.forEach(p => {
-    if(p.running && (Date.now() - p.startedAt) >= state.autoStopMs){
-      stopPerson(p.id);
-      beep();
-      heard.textContent = `⏱ "${p.name}" auto-stopped after ${document.getElementById('autoStopInput').value} min (this turn)`;
+    if(!p.running) return;
+    if(turnElapsed(p) >= state.alarmMs){
+      if(!p.alarming){
+        p.alarming = true;
+        heard.textContent = `⏱ "${p.name}" reached the alarm time — say stop or start a new name to silence it`;
+      }
+      if(!p.lastBeepAt || Date.now() - p.lastBeepAt >= 1000){
+        beep();
+        p.lastBeepAt = Date.now();
+      }
     }
   });
 }
@@ -265,13 +271,13 @@ function render(){
 }
 
 function tick(){
-  checkAutoStop();
+  checkAlarm();
   render();
 }
 
 function ensureTick(){
   if(tickHandle) return;
-  tickHandle = setInterval(tick, 500);
+  tickHandle = setInterval(tick, 1000);
 }
 
 function findByName(name){
@@ -282,7 +288,7 @@ function findByName(name){
 function addPerson(name){
   if(!name || !name.trim()) return;
   if(findByName(name)) return;
-  state.people.push({id: crypto.randomUUID(), name: name.trim(), running:false, elapsedMs:0, startedAt:null, lastTurnMs:0});
+  state.people.push({id: crypto.randomUUID(), name: name.trim(), running:false, elapsedMs:0, startedAt:null, lastTurnMs:0, alarming:false, lastBeepAt:0});
   render();
 }
 
@@ -294,6 +300,8 @@ function startPerson(id){
   });
   p.running = true;
   p.startedAt = Date.now();
+  p.alarming = false;
+  p.lastBeepAt = 0;
   ensureTick();
   render();
 }
@@ -306,6 +314,7 @@ function stopPerson(id){
   p.lastTurnMs = turnMs;
   p.running = false;
   p.startedAt = null;
+  p.alarming = false;
   render();
 }
 
@@ -325,7 +334,7 @@ document.getElementById('nameInput').addEventListener('keydown', e => {
 
 document.getElementById('autoStopInput').addEventListener('input', e => {
   const minutes = Math.max(1, Number(e.target.value) || 1);
-  state.autoStopMs = minutes * 60 * 1000;
+  state.alarmMs = minutes * 60 * 1000;
 });
 
 // --- Speech recognition ---
