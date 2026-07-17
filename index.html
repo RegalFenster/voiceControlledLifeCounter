@@ -16,11 +16,11 @@
     --mono:'JetBrains Mono','SF Mono',ui-monospace,Consolas,monospace;
   }
   *{box-sizing:border-box;}
-  button:focus-visible, input:focus-visible{
+  button:focus-visible, input:focus-visible, select:focus-visible{
     outline:2px solid var(--go);
     outline-offset:2px;
   }
-  button:focus:not(:focus-visible), input:focus:not(:focus-visible){
+  button:focus:not(:focus-visible), input:focus:not(:focus-visible), select:focus:not(:focus-visible){
     outline:none;
   }
   body{
@@ -154,11 +154,6 @@
 <h1>Voice Timer</h1>
 <div class="sub">Say „<b style="color:var(--ink)">Name start</b>" to start the timer, „<b style="color:var(--ink)">Name stop</b>" to stop it. <i>(Voice recognition only works in Chrome.)</i></div>
 
-<div class="total-row">
-  <span class="label">Total time</span>
-  <span class="ptime" id="totalTime">00:00:00</span>
-</div>
-
 <div class="mic-row">
   <div class="dot" id="dot"></div>
   <div class="mic-text">
@@ -169,17 +164,22 @@
 </div>
 
 <div class="settings-row">
-  <span>Auto-stop after</span>
-  <input type="number" id="autoStopInput" min="1" value="5">
-  <span>min per turn</span>
-</div>
-
-<div class="settings-row">
   <span>Recognition language</span>
   <select id="langSelect">
     <option value="de-DE" selected>German</option>
     <option value="en-US">English</option>
   </select>
+</div>
+
+<div class="settings-row">
+  <span>Auto-stop after</span>
+  <input type="number" id="autoStopInput" min="1" value="5">
+  <span>min per turn</span>
+</div>
+
+<div class="total-row">
+  <span class="label">Total time</span>
+  <span class="ptime" id="totalTime">00:00:00</span>
 </div>
 
 <div class="add-row">
@@ -289,6 +289,9 @@ function addPerson(name){
 function startPerson(id){
   const p = state.people.find(x=>x.id===id);
   if(!p || p.running) return;
+  state.people.forEach(other => {
+    if(other.id !== id && other.running) stopPerson(other.id);
+  });
   p.running = true;
   p.startedAt = Date.now();
   ensureTick();
