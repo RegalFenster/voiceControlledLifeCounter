@@ -368,10 +368,37 @@ function parseCommand(text){
   return {action, namePart};
 }
 
+function levenshtein(a, b){
+  const dp = Array.from({length: a.length+1}, (_,i) => [i, ...new Array(b.length).fill(0)]);
+  for(let j=0;j<=b.length;j++) dp[0][j] = j;
+  for(let i=1;i<=a.length;i++){
+    for(let j=1;j<=b.length;j++){
+      dp[i][j] = a[i-1]===b[j-1] ? dp[i-1][j-1] : 1+Math.min(dp[i-1][j-1], dp[i-1][j], dp[i][j-1]);
+    }
+  }
+  return dp[a.length][b.length];
+}
+
 function findPersonForName(namePart){
   let person = findByName(namePart);
   if(person) return person;
-  return state.people.find(p => namePart.includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(namePart));
+  person = state.people.find(p => namePart.includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(namePart));
+  if(person) return person;
+
+  // fuzzy fallback: pick the closest known name if it's within ~1/3 edits,
+  // so mishears like "Hanna" -> "Anna" still match an existing player
+  let best = null, bestDist = Infinity;
+  state.people.forEach(p => {
+    const dist = levenshtein(namePart, p.name.toLowerCase());
+    if(dist < bestDist){ bestDist = dist; best = p; }
+  });
+  if(best){
+    // no forced minimum: short names (e.g. "1" vs "2") must match exactly,
+    // fuzzy tolerance only kicks in once names are long enough for a mishear to make sense
+    const threshold = Math.floor(Math.max(namePart.length, best.name.length) * 0.34);
+    if(bestDist <= threshold) return best;
+  }
+  return null;
 }
 
 // tries every alternative guess the recognizer offers (not just its top pick) and
