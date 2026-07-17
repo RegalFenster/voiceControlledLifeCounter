@@ -65,11 +65,6 @@
   .dot.live{
     background:var(--go);
     box-shadow:0 0 0 4px rgba(95,184,122,.18);
-    animation:pulse 1.6s ease-in-out infinite;
-  }
-  @keyframes pulse{
-    0%,100%{box-shadow:0 0 0 4px rgba(95,184,122,.18);}
-    50%{box-shadow:0 0 0 8px rgba(95,184,122,.06);}
   }
   .mic-text{flex:1; font-size:14px;}
   .mic-heard{font-family:var(--mono); font-size:12px; color:var(--dim); margin-top:2px; min-height:14px;}
@@ -141,18 +136,49 @@
   .pctrl button{
     border:none; border-radius:6px; padding:8px 12px; font-size:12px; font-weight:700;
     cursor:pointer; text-transform:uppercase; letter-spacing:.04em;
+    transition:background .15s, color .15s;
   }
-  .btn-start{background:var(--go); color:#0f1410;}
-  .btn-stop{background:var(--stop); color:#fff;}
+  .btn-toggle{background:var(--go); color:#0f1410;}
+  .btn-toggle.is-running{background:var(--stop); color:#fff;}
   .btn-del{background:transparent; color:var(--dim); border:1px solid var(--line) !important;}
 
   .empty{color:var(--dim); font-size:13px; padding:20px 0; text-align:center;}
+
+  .mode-tabs{
+    display:flex; gap:4px; background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:4px; margin-bottom:16px;
+  }
+  .mode-tab{
+    flex:1; background:transparent; border:none; color:var(--dim);
+    padding:8px 12px; border-radius:7px; font-size:13px; font-weight:600; cursor:pointer;
+    transition:background .15s, color .15s;
+  }
+  .mode-tab.active{background:var(--line); color:var(--ink);}
+
+  .turn-row{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:12px 16px; margin-bottom:16px; font-size:13px;
+  }
+  .turn-row .turn-ctrl{display:flex; gap:6px;}
+  .turn-row button{
+    border-radius:6px; padding:8px 14px; font-size:12px; font-weight:700;
+    cursor:pointer; text-transform:uppercase; letter-spacing:.04em;
+    transition:background .15s, color .15s;
+  }
+  .btn-primary{background:var(--ink); color:var(--bg); border:none;}
+  .btn-ghost{background:transparent; color:var(--ink); border:1px solid var(--line);}
 </style>
 </head>
 <body>
 
 <h1>Voice Timer</h1>
-<div class="sub">Say „<b style="color:var(--ink)">Name start</b>" to start the timer, „<b style="color:var(--ink)">Name stop</b>" to stop it. <i>(Voice recognition only works in Chrome.)</i></div>
+<div class="sub"><span id="hintText">Say „<b style="color:var(--ink)">Name start</b>" to start the timer, „<b style="color:var(--ink)">Name stop</b>" to stop it.</span> <i>(Voice recognition only works in Chrome.)</i></div>
+
+<div class="mode-tabs" id="modeTabs">
+  <button class="mode-tab active" data-mode="named">Named</button>
+  <button class="mode-tab" data-mode="turn">Turn-based</button>
+</div>
 
 <div class="mic-row">
   <div class="dot" id="dot"></div>
@@ -177,20 +203,46 @@
   <span>min per turn</span>
 </div>
 
-<div class="total-row">
+<div class="total-row" id="namedTotalRow">
   <span class="label">Total time</span>
   <span class="ptime" id="totalTime">00:00:00</span>
 </div>
 
-<div class="add-row">
+<div class="total-row" id="turnTotalRow" style="display:none;">
+  <span class="label">Total time</span>
+  <span class="ptime" id="turnTotalTime">00:00:00</span>
+</div>
+
+<div class="add-row" id="addRow">
   <input type="text" id="nameInput" placeholder="Add name…" spellcheck="false" autocomplete="off">
   <button id="addBtn">+ Add</button>
 </div>
 
 <div id="list"></div>
 
+<div class="turn-row" id="turnRow" style="display:none;">
+  <div>
+    <div id="turnRoundLabel" style="color:var(--dim);">No round started yet</div>
+    <div class="ptime" id="turnRoundTime">00:00:00</div>
+    <div style="margin-top:8px; font-size:12px; color:var(--dim);">
+      Say <input type="text" id="turnWordInput" value="tango" autocomplete="off" spellcheck="false" style="width:90px; background:var(--bg); border:1px solid var(--line); color:var(--ink); padding:4px 6px; border-radius:5px; font-size:12px; text-align:center;"> to advance
+    </div>
+    <div style="margin-top:4px; font-size:12px; color:var(--dim);">
+      Say <input type="text" id="turnPauseWordInput" value="guacamole" autocomplete="off" spellcheck="false" style="width:90px; background:var(--bg); border:1px solid var(--line); color:var(--ink); padding:4px 6px; border-radius:5px; font-size:12px; text-align:center;"> to pause/resume
+    </div>
+  </div>
+  <div class="turn-ctrl">
+    <button class="btn-ghost" id="turnToggleBtn">Start</button>
+    <button class="btn-primary" id="turnNextBtn">Next</button>
+  </div>
+</div>
+
 <script>
-const state = { people: [], alarmMs: 5*60*1000 }; // {id, name, running, elapsedMs, startedAt}
+const state = {
+  people: [], alarmMs: 5*60*1000, mode: 'named',
+  // turn-based mode has no roster - just one round timer that resets on "next"
+  turn: { round: 0, running: false, startedAt: null, elapsedMs: 0, totalMs: 0, alarming: false, lastBeepAt: 0 }
+}; // {id, name, running, elapsedMs, startedAt}
 let tickHandle = null;
 
 function fmt(ms){
@@ -215,10 +267,14 @@ function beep(){
     const o = ctx.createOscillator();
     const g = ctx.createGain();
     o.connect(g); g.connect(ctx.destination);
-    o.frequency.value = 880;
-    g.gain.value = 0.15;
+    o.type = 'square'; // harsher/buzzier than a sine, reads as more urgent
+    // quick up-down sweep per beep, like a siren yelp instead of a flat tone
+    o.frequency.setValueAtTime(1000, ctx.currentTime);
+    o.frequency.linearRampToValueAtTime(600, ctx.currentTime + 0.12);
+    o.frequency.linearRampToValueAtTime(1000, ctx.currentTime + 0.24);
+    g.gain.value = 0.22;
     o.start();
-    setTimeout(()=>{ o.stop(); ctx.close(); }, 300);
+    setTimeout(()=>{ o.stop(); ctx.close(); }, 260);
   }catch(e){}
 }
 
@@ -230,7 +286,7 @@ function checkAlarm(){
         p.alarming = true;
         heard.textContent = `⏱ "${p.name}" reached the alarm time — say stop or start a new name to silence it`;
       }
-      if(!p.lastBeepAt || Date.now() - p.lastBeepAt >= 1000){
+      if(!p.lastBeepAt || Date.now() - p.lastBeepAt >= 400){
         beep();
         p.lastBeepAt = Date.now();
       }
@@ -238,46 +294,91 @@ function checkAlarm(){
   });
 }
 
+function checkTurnAlarm(){
+  const t = state.turn;
+  if(!t.running) return;
+  const elapsed = t.elapsedMs + (Date.now() - t.startedAt);
+  if(elapsed >= state.alarmMs){
+    if(!t.alarming){
+      t.alarming = true;
+      heard.textContent = `⏱ Round ${t.round} reached the alarm time — say "next" to continue`;
+    }
+    if(!t.lastBeepAt || Date.now() - t.lastBeepAt >= 400){
+      beep();
+      t.lastBeepAt = Date.now();
+    }
+  }
+}
+
+function personRowHTML(p){
+  return `
+    <div class="person ${p.running?'running':''}" data-id="${p.id}">
+      <div>
+        <div class="pname">${p.name}</div>
+        <div class="ptimes">
+          <div class="ptime-block">
+            <span class="ptime-label">Turn</span>
+            <span class="ptime" data-turn>${fmt(turnElapsed(p))}</span>
+          </div>
+          <div class="ptime-block">
+            <span class="ptime-label">Total</span>
+            <span class="ptime" data-total>${fmt(currentElapsed(p))}</span>
+          </div>
+        </div>
+      </div>
+      <div class="pctrl">
+        ${state.mode === 'named' ? `<button class="btn-toggle ${p.running?'is-running':''}" onclick="togglePerson('${p.id}')">${p.running ? 'Stop' : 'Start'}</button>` : ''}
+        <button class="btn-del" onclick="delPerson('${p.id}')">✕</button>
+      </div>
+    </div>
+  `;
+}
+
+// full structural rebuild - only needed when the list itself or button states change
 function render(){
   const list = document.getElementById('list');
   if(state.people.length === 0){
     list.innerHTML = '<div class="empty">No names yet. Add one above.</div>';
   } else {
-    list.innerHTML = state.people.map(p => `
-      <div class="person ${p.running?'running':''}">
-        <div>
-          <div class="pname">${p.name}</div>
-          <div class="ptimes">
-            <div class="ptime-block">
-              <span class="ptime-label">Turn</span>
-              <span class="ptime">${fmt(turnElapsed(p))}</span>
-            </div>
-            <div class="ptime-block">
-              <span class="ptime-label">Total</span>
-              <span class="ptime">${fmt(currentElapsed(p))}</span>
-            </div>
-          </div>
-        </div>
-        <div class="pctrl">
-          <button class="btn-start" onclick="startPerson('${p.id}')">Start</button>
-          <button class="btn-stop" onclick="stopPerson('${p.id}')">Stop</button>
-          <button class="btn-del" onclick="delPerson('${p.id}')">✕</button>
-        </div>
-      </div>
-    `).join('');
+    list.innerHTML = state.people.map(personRowHTML).join('');
   }
+  updateTimes();
+}
+
+// cheap per-second update - only touches time text, no DOM rebuild (avoids flicker/jank)
+function updateTimes(){
+  state.people.forEach(p => {
+    const row = document.querySelector(`.person[data-id="${p.id}"]`);
+    if(!row) return;
+    row.querySelector('[data-turn]').textContent = fmt(turnElapsed(p));
+    row.querySelector('[data-total]').textContent = fmt(currentElapsed(p));
+  });
   const total = state.people.reduce((sum,p)=>sum+currentElapsed(p),0);
   document.getElementById('totalTime').textContent = fmt(total);
 }
 
+function updateTurnDisplay(){
+  const t = state.turn;
+  const roundMs = t.elapsedMs + (t.running ? Date.now() - t.startedAt : 0);
+  document.getElementById('turnRoundLabel').textContent = t.round === 0 ? 'No round started yet' : `Round ${t.round}`;
+  document.getElementById('turnRoundTime').textContent = fmt(roundMs);
+  document.getElementById('turnTotalTime').textContent = fmt(t.totalMs + roundMs);
+  document.getElementById('turnToggleBtn').textContent = t.running ? 'Pause' : 'Start';
+}
+
 function tick(){
-  checkAlarm();
-  render();
+  if(state.mode === 'turn'){
+    checkTurnAlarm();
+    updateTurnDisplay();
+  } else {
+    checkAlarm();
+    updateTimes();
+  }
 }
 
 function ensureTick(){
   if(tickHandle) return;
-  tickHandle = setInterval(tick, 1000);
+  tickHandle = setInterval(tick, 250);
 }
 
 function findByName(name){
@@ -322,6 +423,93 @@ function delPerson(id){
   state.people = state.people.filter(x=>x.id!==id);
   render();
 }
+
+function togglePerson(id){
+  const p = state.people.find(x=>x.id===id);
+  if(!p) return;
+  if(p.running) stopPerson(id); else startPerson(id);
+}
+
+// --- Turn-based mode: no roster, just one round timer that resets on "next" ---
+function turnStart(){
+  const t = state.turn;
+  if(t.running) return;
+  if(t.round === 0) t.round = 1;
+  t.running = true;
+  t.startedAt = Date.now();
+  t.alarming = false;
+  t.lastBeepAt = 0;
+  ensureTick();
+  updateTurnDisplay();
+}
+
+function turnStop(){
+  const t = state.turn;
+  if(!t.running) return;
+  t.elapsedMs += Date.now() - t.startedAt;
+  t.running = false;
+  t.startedAt = null;
+  t.alarming = false;
+  updateTurnDisplay();
+}
+
+function turnNext(){
+  const t = state.turn;
+  if(t.running) t.elapsedMs += Date.now() - t.startedAt;
+  t.totalMs += t.elapsedMs;
+  t.round += 1;
+  t.elapsedMs = 0;
+  t.running = true;
+  t.startedAt = Date.now();
+  t.alarming = false;
+  t.lastBeepAt = 0;
+  ensureTick();
+  updateTurnDisplay();
+}
+
+function turnToggle(){
+  if(state.turn.running) turnStop();
+  else turnStart();
+}
+
+const namedHint = 'Say „<b style="color:var(--ink)">Name start</b>" to start the timer, „<b style="color:var(--ink)">Name stop</b>" to stop it.';
+let turnWord = 'tango';
+let turnPauseWord = 'guacamole';
+
+function turnHint(){
+  return `Say „<b style="color:var(--ink)">${turnWord}</b>" to end the round and start the next one, „<b style="color:var(--ink)">${turnPauseWord}</b>" to pause/resume.`;
+}
+
+function setMode(mode){
+  state.mode = mode;
+  const isTurn = mode === 'turn';
+  document.querySelectorAll('.mode-tab').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+  document.getElementById('turnRow').style.display = isTurn ? 'flex' : 'none';
+  document.getElementById('turnTotalRow').style.display = isTurn ? 'flex' : 'none';
+  document.getElementById('namedTotalRow').style.display = isTurn ? 'none' : 'flex';
+  document.getElementById('addRow').style.display = isTurn ? 'none' : 'flex';
+  document.getElementById('list').style.display = isTurn ? 'none' : '';
+  document.getElementById('hintText').innerHTML = isTurn ? turnHint() : namedHint;
+  if(isTurn) updateTurnDisplay();
+  else render();
+}
+
+document.getElementById('turnWordInput').addEventListener('input', e => {
+  turnWord = e.target.value.trim().toLowerCase() || 'tango';
+  if(state.mode === 'turn') document.getElementById('hintText').innerHTML = turnHint();
+});
+document.getElementById('turnPauseWordInput').addEventListener('input', e => {
+  turnPauseWord = e.target.value.trim().toLowerCase() || 'guacamole';
+  if(state.mode === 'turn') document.getElementById('hintText').innerHTML = turnHint();
+});
+
+document.querySelectorAll('.mode-tab').forEach(btn=>{
+  btn.addEventListener('click', () => setMode(btn.dataset.mode));
+});
+document.getElementById('turnToggleBtn').onclick = turnToggle;
+document.getElementById('turnNextBtn').onclick = turnNext;
 
 document.getElementById('addBtn').onclick = () => {
   const input = document.getElementById('nameInput');
@@ -426,15 +614,47 @@ function processAlternatives(alts){
   }
 }
 
+let turnHandled = { idx: -1, consumedLen: 0 };
+
 function setupRecognition(){
   recognition = new SpeechRec();
   recognition.lang = recognitionLang;
   recognition.continuous = true;
-  recognition.interimResults = false;
+  recognition.interimResults = true;
   recognition.maxAlternatives = 5;
 
   recognition.onresult = (e) => {
-    const last = e.results[e.results.length-1];
+    const idx = e.results.length - 1;
+    const last = e.results[idx];
+
+    if(state.mode === 'turn'){
+      // react to the live (interim) transcript instead of waiting for the recognizer's
+      // silence-based "final" result - that endpointing delay is what made it feel slow
+      if(idx !== turnHandled.idx) turnHandled = { idx, consumedLen: 0 };
+      const transcript = last[0].transcript;
+      heard.textContent = '„' + transcript + '"';
+      // only scan text not yet acted on, and loop so both keywords said back-to-back
+      // (merged into one interim chunk, e.g. "tango guacamole") both fire in order
+      let unseen = transcript.toLowerCase().slice(turnHandled.consumedLen);
+      while(true){
+        const tangoAt = unseen.indexOf(turnWord);
+        const pauseAt = unseen.indexOf(turnPauseWord);
+        if(tangoAt === -1 && pauseAt === -1) break;
+        if(pauseAt === -1 || (tangoAt !== -1 && tangoAt <= pauseAt)){
+          const consumed = tangoAt + turnWord.length;
+          turnHandled.consumedLen += consumed;
+          unseen = unseen.slice(consumed);
+          turnNext();
+        } else {
+          const consumed = pauseAt + turnPauseWord.length;
+          turnHandled.consumedLen += consumed;
+          unseen = unseen.slice(consumed);
+          turnToggle();
+        }
+      }
+      return;
+    }
+
     if(last.isFinal){
       const alts = [];
       for(let i=0; i<last.length; i++) alts.push(last[i].transcript);
@@ -446,8 +666,12 @@ function setupRecognition(){
   };
   recognition.onend = () => {
     if(wantRunning){
-      // browsers auto-stop after a while; restart
-      try{ recognition.start(); }catch(err){}
+      // browsers auto-stop after a while (e.g. after a no-speech timeout); restart
+      // and clear any leftover error text so the status doesn't look stuck on an error
+      try{
+        recognition.start();
+        micStatus.textContent = 'Listening…';
+      }catch(err){}
     } else {
       dot.classList.remove('live');
       micStatus.textContent = 'Microphone off';
