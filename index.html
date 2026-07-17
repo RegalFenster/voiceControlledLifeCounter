@@ -352,7 +352,7 @@ function checkTurnAlarm(){
   if(elapsed >= state.alarmMs){
     if(!t.alarming){
       t.alarming = true;
-      heard.textContent = `⏱ Round ${t.round} reached the alarm time — say "next" to continue`;
+      heard.textContent = `⏱ Round ${t.round} reached the alarm time — say "${turnWord}" to continue`;
     }
     if(!t.lastBeepAt || Date.now() - t.lastBeepAt >= currentSoundPreset().interval){
       beep();

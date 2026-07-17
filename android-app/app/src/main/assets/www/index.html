@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Timer</title>
+<style>
+  :root{
+    --bg:#0f1410;
+    --panel:#171d18;
+    --line:#2a332b;
+    --ink:#eef2ea;
+    --dim:#8a998c;
+    --go:#5fb87a;
+    --stop:#c96a4a;
+    --mono:'JetBrains Mono','SF Mono',ui-monospace,Consolas,monospace;
+  }
+  *{box-sizing:border-box;}
+  button:focus-visible, input:focus-visible, select:focus-visible{
+    outline:2px solid var(--go);
+    outline-offset:2px;
+  }
+  button:focus:not(:focus-visible), input:focus:not(:focus-visible), select:focus:not(:focus-visible){
+    outline:none;
+  }
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Inter',system-ui,-apple-system,sans-serif;
+    min-height:100vh;
+    padding:20px 16px 60px;
+    transition:background .6s;
+  }
+  body.flash{
+    background:var(--go);
+    transition:background 0s;
+  }
+  h1{
+    font-family:var(--mono);
+    font-size:15px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--dim);
+    margin:0 0 4px;
+    font-weight:600;
+  }
+  .sub{
+    font-size:13px;
+    color:var(--dim);
+    margin-bottom:20px;
+    line-height:1.5;
+  }
+  .mic-row{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:14px 16px;
+    margin-bottom:16px;
+  }
+  .dot{
+    width:11px;height:11px;border-radius:50%;
+    background:#3a453c;
+    flex-shrink:0;
+    transition:background .2s, box-shadow .2s;
+  }
+  .dot.live{
+    background:var(--go);
+    box-shadow:0 0 0 4px rgba(95,184,122,.18);
+  }
+  .mic-text{flex:1; font-size:14px;}
+  .mic-heard{font-family:var(--mono); font-size:12px; color:var(--dim); margin-top:2px; min-height:14px;}
+  button.mic-btn{
+    background:var(--ink); color:var(--bg); border:none;
+    padding:9px 16px; border-radius:7px; font-size:13px; font-weight:600;
+    cursor:pointer;
+  }
+  button.mic-btn.on{background:var(--stop); color:#fff;}
+
+  .settings-row{
+    display:flex; align-items:center; gap:10px;
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:12px 16px; margin-bottom:16px;
+    font-size:13px; color:var(--dim);
+  }
+  .settings-row input{
+    width:56px; background:var(--bg); border:1px solid var(--line);
+    color:var(--ink); padding:6px 8px; border-radius:6px; font-size:13px;
+    text-align:center;
+  }
+  .settings-row select{
+    background:var(--bg); border:1px solid var(--line);
+    color:var(--ink); padding:6px 8px; border-radius:6px; font-size:13px;
+  }
+
+  .add-row{
+    display:flex; gap:8px; margin-bottom:16px;
+  }
+  .add-row input{
+    flex:1; background:var(--panel); border:1px solid var(--line);
+    color:var(--ink); padding:11px 12px; border-radius:8px; font-size:14px;
+  }
+  .add-row button{
+    background:var(--panel); border:1px solid var(--line); color:var(--ink);
+    padding:11px 16px; border-radius:8px; font-size:14px; cursor:pointer;
+  }
+
+  .total-row{
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:8px; padding:12px 16px; margin-bottom:16px;
+  }
+  .total-row .label{font-size:13px; color:var(--dim);}
+  .total-row .ptime{font-family:var(--mono); font-size:20px; color:var(--ink); font-variant-numeric:tabular-nums;}
+
+  .person{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-left:3px solid var(--line);
+    border-radius:8px;
+    padding:14px 16px;
+    margin-bottom:10px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    transition:border-color .2s;
+  }
+  .person.running{border-left-color:var(--go);}
+  .pname{font-size:15px; font-weight:600; margin-bottom:4px;}
+  .ptime{font-family:var(--mono); font-size:20px; color:var(--dim); font-variant-numeric:tabular-nums;}
+  .person.running .ptime{color:var(--go);}
+  .ptimes{display:flex; gap:16px;}
+  .ptime-block{display:flex; flex-direction:column;}
+  .ptime-label{font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:.06em; margin-bottom:2px;}
+  .ptime-block .ptime{font-size:17px;}
+  .pctrl{display:flex; gap:6px;}
+  .pctrl button{
+    border:none; border-radius:6px; padding:8px 12px; font-size:12px; font-weight:700;
+    cursor:pointer; text-transform:uppercase; letter-spacing:.04em;
+    transition:background .15s, color .15s;
+  }
+  .btn-toggle{background:var(--go); color:#0f1410;}
+  .btn-toggle.is-running{background:var(--stop); color:#fff;}
+  .btn-del{background:transparent; color:var(--dim); border:1px solid var(--line) !important;}
+
+  .empty{color:var(--dim); font-size:13px; padding:20px 0; text-align:center;}
+
+  .mode-tabs{
+    display:flex; gap:4px; background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:4px; margin-bottom:16px;
+  }
+  .mode-tab{
+    flex:1; background:transparent; border:none; color:var(--dim);
+    padding:8px 12px; border-radius:7px; font-size:13px; font-weight:600; cursor:pointer;
+    transition:background .15s, color .15s;
+  }
+  .mode-tab.active{background:var(--line); color:var(--ink);}
+
+  .turn-row{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:12px 16px; margin-bottom:16px; font-size:13px;
+  }
+  .turn-row .turn-ctrl{display:flex; gap:6px;}
+  .turn-row button{
+    border-radius:6px; padding:8px 14px; font-size:12px; font-weight:700;
+    cursor:pointer; text-transform:uppercase; letter-spacing:.04em;
+    transition:background .15s, color .15s;
+  }
+  .btn-primary{background:var(--ink); color:var(--bg); border:none;}
+  .btn-ghost{background:transparent; color:var(--ink); border:1px solid var(--line);}
+</style>
+</head>
+<body>
+
+<h1>Voice Timer</h1>
+<div class="sub"><span id="hintText">Say „<b style="color:var(--ink)">Name start</b>" or „<b style="color:var(--ink)">start Name</b>" to start the timer, „<b style="color:var(--ink)">Name stop</b>" or „<b style="color:var(--ink)">stop Name</b>" to stop it.</span> <i id="engineNote">(Voice recognition only works in Chrome.)</i></div>
+
+<div class="mode-tabs" id="modeTabs">
+  <button class="mode-tab active" data-mode="turn">Turn-based</button>
+  <button class="mode-tab" data-mode="named">Named</button>
+</div>
+
+<div class="mic-row">
+  <div class="dot" id="dot"></div>
+  <div class="mic-text">
+    <div id="micStatus">Microphone off</div>
+    <div class="mic-heard" id="heard"></div>
+  </div>
+  <button class="mic-btn" id="micBtn">Start</button>
+</div>
+
+<div class="settings-row" id="langRow">
+  <span>Recognition language</span>
+  <select id="langSelect">
+    <option value="de-DE" selected>German</option>
+    <option value="en-US">English</option>
+  </select>
+</div>
+
+<div class="settings-row">
+  <span>Alarm after</span>
+  <input type="number" id="autoStopInput" min="1" value="5">
+  <span>min per turn</span>
+  <select id="alarmSoundSelect"></select>
+</div>
+
+<div class="total-row" id="namedTotalRow">
+  <span class="label">Total time</span>
+  <span class="ptime" id="totalTime">00:00:00</span>
+</div>
+
+<div class="total-row" id="turnTotalRow" style="display:none;">
+  <span class="label">Total time</span>
+  <span class="ptime" id="turnTotalTime">00:00:00</span>
+</div>
+
+<div class="add-row" id="addRow">
+  <input type="text" id="nameInput" placeholder="Add name…" spellcheck="false" autocomplete="off">
+  <button id="addBtn">+ Add</button>
+</div>
+
+<div id="list"></div>
+
+<div class="turn-row" id="turnRow" style="display:none;">
+  <div>
+    <div id="turnRoundLabel" style="color:var(--dim);">No round started yet</div>
+    <div class="ptime" id="turnRoundTime">00:00:00</div>
+    <div style="margin-top:8px; font-size:12px; color:var(--dim);">
+      Say <input type="text" id="turnWordInput" value="tango" autocomplete="off" spellcheck="false" style="width:90px; background:var(--bg); border:1px solid var(--line); color:var(--ink); padding:4px 6px; border-radius:5px; font-size:12px; text-align:center;"> to advance
+    </div>
+    <div style="margin-top:4px; font-size:12px; color:var(--dim);">
+      Say <input type="text" id="turnPauseWordInput" value="guacamole" autocomplete="off" spellcheck="false" style="width:90px; background:var(--bg); border:1px solid var(--line); color:var(--ink); padding:4px 6px; border-radius:5px; font-size:12px; text-align:center;"> to pause/resume
+    </div>
+  </div>
+  <div class="turn-ctrl">
+    <button class="btn-ghost" id="turnToggleBtn">Start</button>
+    <button class="btn-primary" id="turnNextBtn">Next</button>
+  </div>
+</div>
+
+<script>
+const state = {
+  people: [], alarmMs: 5*60*1000, mode: 'turn', alarmSound: 'oven-beep',
+  // turn-based mode has no roster - just one round timer that resets on "next"
+  turn: { round: 0, running: false, startedAt: null, elapsedMs: 0, totalMs: 0, alarming: false, lastBeepAt: 0 }
+}; // {id, name, running, elapsedMs, startedAt}
+let tickHandle = null;
+
+function fmt(ms){
+  const s = Math.floor(ms/1000);
+  const h = String(Math.floor(s/3600)).padStart(2,'0');
+  const m = String(Math.floor((s%3600)/60)).padStart(2,'0');
+  const sec = String(s%60).padStart(2,'0');
+  return `${h}:${m}:${sec}`;
+}
+
+function currentElapsed(p){
+  return p.elapsedMs + (p.running ? (Date.now() - p.startedAt) : 0);
+}
+
+function turnElapsed(p){
+  return p.running ? (Date.now() - p.startedAt) : (p.lastTurnMs || 0);
+}
+
+let audioCtx = null;
+function getAudioCtx(){
+  if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+// single discrete pip, e.g. "beep-beep-beep"
+function scheduleTone(c, {t, dur, type='square', freq=800, gain=0.22, attack=0.008, release=0.02}){
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = type; o.connect(g); g.connect(c.destination);
+  const t0 = c.currentTime + t;
+  o.frequency.setValueAtTime(freq, t0);
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(gain, t0 + attack);
+  g.gain.setValueAtTime(gain, Math.max(t0 + attack, t0 + dur - release));
+  g.gain.linearRampToValueAtTime(0, t0 + dur);
+  o.start(t0); o.stop(t0 + dur + 0.02);
+}
+
+// continuous tone gliding through a sequence of frequency segments, e.g. a siren yelp
+function scheduleSweep(c, {t, segs, type='square', gain=0.22}){
+  const o = c.createOscillator(), g = c.createGain();
+  o.type = type; o.connect(g); g.connect(c.destination);
+  const t0 = c.currentTime + t;
+  let cursor = t0;
+  o.frequency.setValueAtTime(segs[0].freq, t0);
+  segs.forEach(seg => { cursor += seg.dur; o.frequency.linearRampToValueAtTime(seg.freq, cursor); });
+  g.gain.setValueAtTime(gain, t0);
+  g.gain.setValueAtTime(gain, cursor - 0.03);
+  g.gain.linearRampToValueAtTime(0, cursor);
+  o.start(t0); o.stop(cursor + 0.02);
+}
+
+// each preset's `interval` is how often checkAlarm/checkTurnAlarm should retrigger it (ms),
+// long enough for its own pattern to finish before it repeats
+const soundPresets = {
+  'oven-beep': { label: 'Timer Beep', interval: 900,
+    play(c){ [0,0.25,0.5].forEach(t => scheduleTone(c, {t, dur:0.15, type:'sine', freq:880, gain:0.22, attack:0.02, release:0.05})); } },
+  'siren-sweep': { label: 'Yelp Siren', interval: 400,
+    play(c){ scheduleSweep(c, {t:0, gain:0.22, type:'square', segs:[{freq:1000,dur:0},{freq:600,dur:0.12},{freq:1000,dur:0.12}]}); } },
+  'smoke-detector': { label: 'Smoke Alarm', interval: 1100,
+    play(c){ [0,0.2,0.4].forEach(t => scheduleTone(c, {t, dur:0.1, type:'square', freq:3150, gain:0.18, attack:0.003, release:0.01})); } },
+  'ambulance': { label: 'Hi-Lo Siren', interval: 2000,
+    play(c){ for(let i=0;i<4;i++) scheduleTone(c, {t:i*0.5, dur:0.48, type:'sawtooth', freq: i%2===0?440:554.37, gain:0.2, attack:0.01, release:0.03}); } },
+  'alarm-clock': { label: 'Alarm Clock', interval: 1400,
+    play(c){ for(let i=0;i<8;i++) scheduleTone(c, {t:i*0.16, dur:0.08, type:'square', freq:1200, gain:0.2, attack:0.004, release:0.01}); } },
+  'buzzer': { label: 'Klaxon', interval: 1100,
+    play(c){ scheduleTone(c, {t:0, dur:1.0, type:'sawtooth', freq:150, gain:0.2, attack:0.01, release:0.08}); } },
+  'escalation': { label: 'Rising Tone', interval: 800,
+    play(c){ [523.25,659.25,783.99,1046.5].forEach((f,i) => scheduleTone(c, {t:i*0.15, dur:0.15, type:'triangle', freq:f, gain:0.22, attack:0.01, release:0.03})); } },
+  'sos-morse': { label: 'SOS Morse', interval: 2700,
+    play(c){ const dot=0.1, dash=0.3, gap=0.1; let t=0; [dot,dot,dot,dash,dash,dash,dot,dot,dot].forEach(d => { scheduleTone(c, {t, dur:d, type:'square', freq:900, gain:0.2, attack:0.005, release:0.01}); t += d+gap; }); } },
+  'bell-chime': { label: 'Bell Chime', interval: 1400,
+    play(c){ [1,2,3.01].forEach((mul,i) => scheduleTone(c, {t:0, dur:1.2, type:'sine', freq:523.25*mul, gain:0.16/(i+1), attack:0.005, release:1.0})); } },
+  'civil-defense': { label: 'Air Raid', interval: 5800,
+    play(c){ for(let i=0;i<2;i++) scheduleSweep(c, {t:i*2.8, gain:0.2, type:'sawtooth', segs:[{freq:220,dur:0},{freq:880,dur:1.4},{freq:220,dur:1.4}]}); } },
+};
+
+function currentSoundPreset(){
+  return soundPresets[state.alarmSound] || soundPresets['oven-beep'];
+}
+
+function beep(){
+  try{ currentSoundPreset().play(getAudioCtx()); }catch(e){}
+}
+
+function checkAlarm(){
+  state.people.forEach(p => {
+    if(!p.running) return;
+    if(turnElapsed(p) >= state.alarmMs){
+      if(!p.alarming){
+        p.alarming = true;
+        heard.textContent = `⏱ "${p.name}" reached the alarm time — say stop or start a new name to silence it`;
+      }
+      if(!p.lastBeepAt || Date.now() - p.lastBeepAt >= currentSoundPreset().interval){
+        beep();
+        p.lastBeepAt = Date.now();
+      }
+    }
+  });
+}
+
+function checkTurnAlarm(){
+  const t = state.turn;
+  if(!t.running) return;
+  const elapsed = t.elapsedMs + (Date.now() - t.startedAt);
+  if(elapsed >= state.alarmMs){
+    if(!t.alarming){
+      t.alarming = true;
+      heard.textContent = `⏱ Round ${t.round} reached the alarm time — say "${turnWord}" to continue`;
+    }
+    if(!t.lastBeepAt || Date.now() - t.lastBeepAt >= currentSoundPreset().interval){
+      beep();
+      t.lastBeepAt = Date.now();
+    }
+  }
+}
+
+function personRowHTML(p){
+  return `
+    <div class="person ${p.running?'running':''}" data-id="${p.id}">
+      <div>
+        <div class="pname">${p.name}</div>
+        <div class="ptimes">
+          <div class="ptime-block">
+            <span class="ptime-label">Turn</span>
+            <span class="ptime" data-turn>${fmt(turnElapsed(p))}</span>
+          </div>
+          <div class="ptime-block">
+            <span class="ptime-label">Total</span>
+            <span class="ptime" data-total>${fmt(currentElapsed(p))}</span>
+          </div>
+        </div>
+      </div>
+      <div class="pctrl">
+        ${state.mode === 'named' ? `<button class="btn-toggle ${p.running?'is-running':''}" onclick="togglePerson('${p.id}')">${p.running ? 'Stop' : 'Start'}</button>` : ''}
+        <button class="btn-del" onclick="delPerson('${p.id}')">✕</button>
+      </div>
+    </div>
+  `;
+}
+
+// full structural rebuild - only needed when the list itself or button states change
+function render(){
+  const list = document.getElementById('list');
+  if(state.people.length === 0){
+    list.innerHTML = '<div class="empty">No names yet. Add one above.</div>';
+  } else {
+    list.innerHTML = state.people.map(personRowHTML).join('');
+  }
+  updateTimes();
+}
+
+// cheap per-second update - only touches time text, no DOM rebuild (avoids flicker/jank)
+function updateTimes(){
+  state.people.forEach(p => {
+    const row = document.querySelector(`.person[data-id="${p.id}"]`);
+    if(!row) return;
+    row.querySelector('[data-turn]').textContent = fmt(turnElapsed(p));
+    row.querySelector('[data-total]').textContent = fmt(currentElapsed(p));
+  });
+  const total = state.people.reduce((sum,p)=>sum+currentElapsed(p),0);
+  document.getElementById('totalTime').textContent = fmt(total);
+}
+
+function updateTurnDisplay(){
+  const t = state.turn;
+  const roundMs = t.elapsedMs + (t.running ? Date.now() - t.startedAt : 0);
+  document.getElementById('turnRoundLabel').textContent = t.round === 0 ? 'No round started yet' : `Round ${t.round}`;
+  document.getElementById('turnRoundTime').textContent = fmt(roundMs);
+  document.getElementById('turnTotalTime').textContent = fmt(t.totalMs + roundMs);
+  document.getElementById('turnToggleBtn').textContent = t.running ? 'Pause' : 'Start';
+}
+
+function tick(){
+  if(state.mode === 'turn'){
+    checkTurnAlarm();
+    updateTurnDisplay();
+  } else {
+    checkAlarm();
+    updateTimes();
+  }
+}
+
+function ensureTick(){
+  if(tickHandle) return;
+  tickHandle = setInterval(tick, 250);
+}
+
+function findByName(name){
+  const norm = name.trim().toLowerCase();
+  return state.people.find(p => p.name.toLowerCase() === norm);
+}
+
+function addPerson(name){
+  if(!name || !name.trim()) return;
+  if(findByName(name)) return;
+  state.people.push({id: crypto.randomUUID(), name: name.trim(), running:false, elapsedMs:0, startedAt:null, lastTurnMs:0, alarming:false, lastBeepAt:0});
+  render();
+  syncNativeVocabulary();
+}
+
+function startPerson(id){
+  const p = state.people.find(x=>x.id===id);
+  if(!p || p.running) return;
+  state.people.forEach(other => {
+    if(other.id !== id && other.running) stopPerson(other.id);
+  });
+  p.running = true;
+  p.startedAt = Date.now();
+  p.alarming = false;
+  p.lastBeepAt = 0;
+  ensureTick();
+  render();
+}
+
+function stopPerson(id){
+  const p = state.people.find(x=>x.id===id);
+  if(!p || !p.running) return;
+  const turnMs = Date.now() - p.startedAt;
+  p.elapsedMs += turnMs;
+  p.lastTurnMs = turnMs;
+  p.running = false;
+  p.startedAt = null;
+  p.alarming = false;
+  render();
+}
+
+function delPerson(id){
+  state.people = state.people.filter(x=>x.id!==id);
+  render();
+  syncNativeVocabulary();
+}
+
+function togglePerson(id){
+  const p = state.people.find(x=>x.id===id);
+  if(!p) return;
+  if(p.running) stopPerson(id); else startPerson(id);
+}
+
+// --- Turn-based mode: no roster, just one round timer that resets on "next" ---
+function turnStart(){
+  const t = state.turn;
+  if(t.running) return;
+  if(t.round === 0) t.round = 1;
+  t.running = true;
+  t.startedAt = Date.now();
+  t.alarming = false;
+  t.lastBeepAt = 0;
+  ensureTick();
+  updateTurnDisplay();
+}
+
+function turnStop(){
+  const t = state.turn;
+  if(!t.running) return;
+  t.elapsedMs += Date.now() - t.startedAt;
+  t.running = false;
+  t.startedAt = null;
+  t.alarming = false;
+  updateTurnDisplay();
+}
+
+function turnNext(){
+  const t = state.turn;
+  if(t.running) t.elapsedMs += Date.now() - t.startedAt;
+  t.totalMs += t.elapsedMs;
+  t.round += 1;
+  t.elapsedMs = 0;
+  t.running = true;
+  t.startedAt = Date.now();
+  t.alarming = false;
+  t.lastBeepAt = 0;
+  ensureTick();
+  updateTurnDisplay();
+}
+
+function turnToggle(){
+  if(state.turn.running) turnStop();
+  else turnStart();
+}
+
+const namedHint = 'Say „<b style="color:var(--ink)">Name start</b>" or „<b style="color:var(--ink)">start Name</b>" to start the timer, „<b style="color:var(--ink)">Name stop</b>" or „<b style="color:var(--ink)">stop Name</b>" to stop it.';
+let turnWord = 'tango';
+let turnPauseWord = 'guacamole';
+
+function turnHint(){
+  return `Say „<b style="color:var(--ink)">${turnWord}</b>" to end the round and start the next one, „<b style="color:var(--ink)">${turnPauseWord}</b>" to pause/resume.`;
+}
+
+// applies the visual state for a mode - separate from setMode() below so the initial
+// page-load setup can use it without triggering the "pause on switch" side effect
+function applyModeUI(mode){
+  const isTurn = mode === 'turn';
+  document.querySelectorAll('.mode-tab').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+  document.getElementById('turnRow').style.display = isTurn ? 'flex' : 'none';
+  document.getElementById('turnTotalRow').style.display = isTurn ? 'flex' : 'none';
+  document.getElementById('namedTotalRow').style.display = isTurn ? 'none' : 'flex';
+  document.getElementById('addRow').style.display = isTurn ? 'none' : 'flex';
+  document.getElementById('list').style.display = isTurn ? 'none' : '';
+  document.getElementById('hintText').innerHTML = isTurn ? turnHint() : namedHint;
+  if(isTurn) updateTurnDisplay();
+  else render();
+}
+
+function setMode(mode){
+  if(mode === state.mode) return;
+  // switching tabs hides whichever timer was running, which is confusing since it'd
+  // keep silently accumulating time out of view - pause it on the way out instead
+  if(state.mode === 'named'){
+    const running = state.people.find(p => p.running);
+    if(running) stopPerson(running.id);
+  } else if(state.mode === 'turn' && state.turn.running){
+    turnStop();
+  }
+  state.mode = mode;
+  applyModeUI(mode);
+}
+
+document.getElementById('turnWordInput').addEventListener('input', e => {
+  turnWord = e.target.value.trim().toLowerCase() || 'tango';
+  if(state.mode === 'turn') document.getElementById('hintText').innerHTML = turnHint();
+  syncNativeVocabulary();
+});
+document.getElementById('turnPauseWordInput').addEventListener('input', e => {
+  turnPauseWord = e.target.value.trim().toLowerCase() || 'guacamole';
+  if(state.mode === 'turn') document.getElementById('hintText').innerHTML = turnHint();
+  syncNativeVocabulary();
+});
+
+document.querySelectorAll('.mode-tab').forEach(btn=>{
+  btn.addEventListener('click', () => setMode(btn.dataset.mode));
+});
+document.getElementById('turnToggleBtn').onclick = turnToggle;
+document.getElementById('turnNextBtn').onclick = turnNext;
+
+document.getElementById('addBtn').onclick = () => {
+  const input = document.getElementById('nameInput');
+  addPerson(input.value);
+  input.value = '';
+};
+document.getElementById('nameInput').addEventListener('keydown', e => {
+  if(e.key === 'Enter'){ addPerson(e.target.value); e.target.value=''; }
+});
+
+document.getElementById('autoStopInput').addEventListener('input', e => {
+  const minutes = Math.max(1, Number(e.target.value) || 1);
+  state.alarmMs = minutes * 60 * 1000;
+});
+
+const alarmSoundSelect = document.getElementById('alarmSoundSelect');
+Object.entries(soundPresets).forEach(([id, preset]) => {
+  const opt = document.createElement('option');
+  opt.value = id;
+  opt.textContent = preset.label;
+  if(id === state.alarmSound) opt.selected = true;
+  alarmSoundSelect.appendChild(opt);
+});
+alarmSoundSelect.addEventListener('change', e => {
+  state.alarmSound = e.target.value;
+});
+
+// --- Speech recognition ---
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+// present only inside the native Android wrapper - a Kotlin/Vosk bridge that listens
+// continuously with no restart cycle, instead of the browser's Web Speech API
+const NativeVosk = window.AndroidVosk || null;
+const micBtn = document.getElementById('micBtn');
+const micStatus = document.getElementById('micStatus');
+const heard = document.getElementById('heard');
+const dot = document.getElementById('dot');
+
+// shows only the outcome of a recognized command (not every raw guess) and flashes the
+// whole screen so it's clearly visible that a command landed
+let flashTimeout = null;
+function flashRecognized(label){
+  heard.textContent = '✓ ' + label;
+  document.body.classList.add('flash');
+  clearTimeout(flashTimeout);
+  flashTimeout = setTimeout(() => document.body.classList.remove('flash'), 700);
+}
+let recognition = null;
+let micOn = false;
+let wantRunning = false;
+let recognitionLang = document.getElementById('langSelect').value;
+
+// mobile browsers cut speech recognition off if the screen dims/locks, which is a big
+// source of the mic repeatedly stopping/restarting; holding a screen wake lock while
+// listening prevents that. Not fatal if unsupported (e.g. desktop) or refused.
+let wakeLock = null;
+async function acquireWakeLock(){
+  if(!('wakeLock' in navigator)) return;
+  try{ wakeLock = await navigator.wakeLock.request('screen'); }catch(err){}
+}
+function releaseWakeLock(){
+  if(wakeLock){ wakeLock.release().catch(()=>{}); wakeLock = null; }
+}
+// wake locks are auto-released when the tab is hidden; re-acquire once it's visible again
+document.addEventListener('visibilitychange', () => {
+  if(wantRunning && document.visibilityState === 'visible') acquireWakeLock();
+});
+
+if(NativeVosk){
+  const note = document.getElementById('engineNote');
+  if(note) note.remove();
+  const langRow = document.getElementById('langRow');
+  if(langRow) langRow.style.display = 'none'; // native build only ships the German model
+}
+
+// Tried restricting Vosk to just the app's own words (names + commands) to boost
+// accuracy, but a tiny closed grammar forces the decoder to map EVERY utterance to one
+// of those words even when it's acoustically nothing alike ("test" got recognized as
+// "tango") - false positives are worse than lower accuracy here, so this is disabled
+// and Vosk runs unconstrained. Kept as a no-op in case grammar mode is worth revisiting
+// with the large model instead of the small one.
+function syncNativeVocabulary(){
+  // intentionally does nothing right now - see comment above
+}
+
+// --- Native (Vosk) bridge: Kotlin calls these directly, mirrors the browser recognizer's flow ---
+window.onNativeMicStatus = function(status){
+  if(status === 'listening'){
+    dot.classList.add('live');
+    micStatus.textContent = 'Listening…';
+  } else {
+    dot.classList.remove('live');
+    micStatus.textContent = 'Microphone off';
+  }
+};
+window.onNativeMicError = function(msg){
+  micStatus.textContent = 'Error: ' + msg;
+};
+// Turn mode reacts to PARTIAL (in-progress) results instead of waiting for the final
+// one, since waiting for Vosk to finish endpointing added a noticeable lag between
+// saying the word and it registering. turnSegmentHandled guards against acting twice
+// on the same utterance (Vosk can briefly add a hallucinated extra word) - once we've
+// reacted, further partials are ignored until the utterance finalizes and resets it.
+let turnSegmentHandled = false;
+window.onNativePartial = function(text){
+  if(state.mode !== 'turn' || turnSegmentHandled || !text) return;
+  // fuzzy per-word match (same tolerance as start/stop) instead of an exact substring
+  // check, so near-misses like "tanko" still count without loosening the model itself
+  const tokens = text.toLowerCase().split(/\s+/);
+  let tangoIdx = -1, pauseIdx = -1;
+  for(let i=0; i<tokens.length; i++){
+    if(tangoIdx === -1 && fuzzyMatchesAny(tokens[i], [turnWord])) tangoIdx = i;
+    if(pauseIdx === -1 && fuzzyMatchesAny(tokens[i], [turnPauseWord])) pauseIdx = i;
+  }
+  if(tangoIdx === -1 && pauseIdx === -1) return;
+  turnSegmentHandled = true;
+  if(pauseIdx === -1 || (tangoIdx !== -1 && tangoIdx <= pauseIdx)){
+    turnNext();
+    flashRecognized(turnWord + ' → next round');
+  } else {
+    turnToggle();
+    flashRecognized(turnPauseWord + (state.turn.running ? ' → resumed' : ' → paused'));
+  }
+};
+window.onNativeTranscript = function(text){
+  turnSegmentHandled = false; // utterance finalized - allow the next one to act again
+  if(!text || state.mode === 'turn') return;
+  processAlternatives([text]);
+};
+
+const startWords = ['start','begin','starte','beginn'];
+const stopWords = ['stop','end','stopp','ende','beende'];
+
+// true if token is close enough (by edit distance) to one of the given command words -
+// tolerates mishears like "staat" for "start", the same way names are fuzzy-matched below
+function fuzzyMatchesAny(token, words){
+  return words.some(w => levenshtein(token, w) <= Math.max(1, Math.floor(w.length * 0.34)));
+}
+
+// parses one transcript guess into {action, namePart}, or null if it's not a command
+function parseCommand(text){
+  const tokens = text.trim().toLowerCase().split(/\s+/);
+  let action = null, matchedIdx = -1;
+  for(let i=0; i<tokens.length; i++){
+    if(fuzzyMatchesAny(tokens[i], startWords)){ action = 'start'; matchedIdx = i; break; }
+    if(fuzzyMatchesAny(tokens[i], stopWords)){ action = 'stop'; matchedIdx = i; break; }
+  }
+  if(!action) return null;
+
+  const namePart = tokens.filter((_, i) => i !== matchedIdx).join(' ').trim();
+  if(!namePart) return null;
+  return {action, namePart};
+}
+
+function levenshtein(a, b){
+  const dp = Array.from({length: a.length+1}, (_,i) => [i, ...new Array(b.length).fill(0)]);
+  for(let j=0;j<=b.length;j++) dp[0][j] = j;
+  for(let i=1;i<=a.length;i++){
+    for(let j=1;j<=b.length;j++){
+      dp[i][j] = a[i-1]===b[j-1] ? dp[i-1][j-1] : 1+Math.min(dp[i-1][j-1], dp[i-1][j], dp[i][j-1]);
+    }
+  }
+  return dp[a.length][b.length];
+}
+
+function findPersonForName(namePart){
+  let person = findByName(namePart);
+  if(person) return person;
+  person = state.people.find(p => namePart.includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(namePart));
+  if(person) return person;
+
+  // fuzzy fallback: pick the closest known name if it's within ~1/3 edits,
+  // so mishears like "Hanna" -> "Anna" still match an existing player
+  let best = null, bestDist = Infinity;
+  state.people.forEach(p => {
+    const dist = levenshtein(namePart, p.name.toLowerCase());
+    if(dist < bestDist){ bestDist = dist; best = p; }
+  });
+  if(best){
+    // no forced minimum: short names (e.g. "1" vs "2") must match exactly,
+    // fuzzy tolerance only kicks in once names are long enough for a mishear to make sense
+    const threshold = Math.floor(Math.max(namePart.length, best.name.length) * 0.34);
+    if(bestDist <= threshold) return best;
+  }
+  return null;
+}
+
+// tries every alternative guess the recognizer offers (not just its top pick) and
+// uses the first one that matches an already-known name, since misheard top guesses
+// ("two" -> "to") are often correct further down the alternatives list
+function processAlternatives(alts){
+  let fallbackCreate = null;
+  for(let i=0; i<alts.length; i++){
+    const parsed = parseCommand(alts[i]);
+    if(!parsed) continue;
+    const person = findPersonForName(parsed.namePart);
+    if(person){
+      if(parsed.action === 'start') startPerson(person.id);
+      else stopPerson(person.id);
+      flashRecognized(person.name + ' ' + parsed.action);
+      return;
+    }
+    if(i===0 && parsed.action === 'start' && !fallbackCreate) fallbackCreate = parsed;
+  }
+  if(fallbackCreate){
+    addPerson(fallbackCreate.namePart.replace(/\b\w/g, c=>c.toUpperCase()));
+    const person = findByName(fallbackCreate.namePart);
+    if(person){
+      startPerson(person.id);
+      flashRecognized(person.name + ' start');
+    }
+  }
+}
+
+let turnHandled = { idx: -1, consumedLen: 0 };
+
+function setupRecognition(){
+  recognition = new SpeechRec();
+  recognition.lang = recognitionLang;
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 5;
+
+  recognition.onresult = (e) => {
+    const idx = e.results.length - 1;
+    const last = e.results[idx];
+
+    if(state.mode === 'turn'){
+      // react to the live (interim) transcript instead of waiting for the recognizer's
+      // silence-based "final" result - that endpointing delay is what made it feel slow
+      if(idx !== turnHandled.idx) turnHandled = { idx, consumedLen: 0 };
+      const transcript = last[0].transcript;
+      heard.textContent = '„' + transcript + '"';
+      // only scan text not yet acted on, and loop so both keywords said back-to-back
+      // (merged into one interim chunk, e.g. "tango guacamole") both fire in order
+      let unseen = transcript.toLowerCase().slice(turnHandled.consumedLen);
+      while(true){
+        const tangoAt = unseen.indexOf(turnWord);
+        const pauseAt = unseen.indexOf(turnPauseWord);
+        if(tangoAt === -1 && pauseAt === -1) break;
+        if(pauseAt === -1 || (tangoAt !== -1 && tangoAt <= pauseAt)){
+          const consumed = tangoAt + turnWord.length;
+          turnHandled.consumedLen += consumed;
+          unseen = unseen.slice(consumed);
+          turnNext();
+        } else {
+          const consumed = pauseAt + turnPauseWord.length;
+          turnHandled.consumedLen += consumed;
+          unseen = unseen.slice(consumed);
+          turnToggle();
+        }
+      }
+      return;
+    }
+
+    if(last.isFinal){
+      const alts = [];
+      for(let i=0; i<last.length; i++) alts.push(last[i].transcript);
+      processAlternatives(alts);
+    }
+  };
+  recognition.onerror = (e) => {
+    micStatus.textContent = 'Error: ' + e.error;
+  };
+  recognition.onend = () => {
+    if(wantRunning){
+      // browsers auto-stop after a while (e.g. after a no-speech timeout); restart
+      // and clear any leftover error text so the status doesn't look stuck on an error
+      try{
+        recognition.start();
+        micStatus.textContent = 'Listening…';
+      }catch(err){
+        // on Android, start() right after onend can throw InvalidStateError because the
+        // previous session hasn't fully torn down yet - a short delay lets it settle,
+        // without this the mic silently stays off despite wantRunning still being true
+        setTimeout(() => {
+          if(!wantRunning) return;
+          try{
+            recognition.start();
+            micStatus.textContent = 'Listening…';
+          }catch(err2){}
+        }, 300);
+      }
+    } else {
+      dot.classList.remove('live');
+      micStatus.textContent = 'Microphone off';
+    }
+  };
+}
+
+function voskLangCode(lang){ return lang.startsWith('de') ? 'de' : 'en'; }
+
+document.getElementById('langSelect').addEventListener('change', e => {
+  recognitionLang = e.target.value;
+  if(recognition) recognition.lang = recognitionLang;
+  if(NativeVosk && micOn) NativeVosk.start(voskLangCode(recognitionLang));
+});
+
+micBtn.onclick = () => {
+  if(NativeVosk){
+    if(!micOn){
+      micOn = true;
+      wantRunning = true;
+      NativeVosk.start(voskLangCode(recognitionLang));
+      micBtn.textContent = 'Stop';
+      micBtn.classList.add('on');
+    } else {
+      micOn = false;
+      wantRunning = false;
+      NativeVosk.stop();
+      micBtn.textContent = 'Start';
+      micBtn.classList.remove('on');
+    }
+    return;
+  }
+
+  if(!SpeechRec){
+    micStatus.textContent = 'Speech recognition is not supported by this browser.';
+    return;
+  }
+  if(!recognition) setupRecognition();
+
+  if(!micOn){
+    try{
+      recognition.start();
+      micOn = true;
+      wantRunning = true;
+      acquireWakeLock();
+      dot.classList.add('live');
+      micStatus.textContent = 'Listening…';
+      micBtn.textContent = 'Stop';
+      micBtn.classList.add('on');
+    }catch(err){
+      micStatus.textContent = 'Access failed: ' + err.message;
+    }
+  } else {
+    wantRunning = false;
+    recognition.stop();
+    micOn = false;
+    releaseWakeLock();
+    micBtn.textContent = 'Start';
+    micBtn.classList.remove('on');
+  }
+};
+
+applyModeUI('turn');
+syncNativeVocabulary();
+</script>
+</body>
+</html>
