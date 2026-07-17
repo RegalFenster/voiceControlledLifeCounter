@@ -173,7 +173,7 @@
 <body>
 
 <h1>Voice Timer</h1>
-<div class="sub"><span id="hintText">Say „<b style="color:var(--ink)">Name start</b>" to start the timer, „<b style="color:var(--ink)">Name stop</b>" to stop it.</span> <i>(Voice recognition only works in Chrome.)</i></div>
+<div class="sub"><span id="hintText">Say „<b style="color:var(--ink)">Name start</b>" or „<b style="color:var(--ink)">start Name</b>" to start the timer, „<b style="color:var(--ink)">Name stop</b>" or „<b style="color:var(--ink)">stop Name</b>" to stop it.</span> <i>(Voice recognition only works in Chrome.)</i></div>
 
 <div class="mode-tabs" id="modeTabs">
   <button class="mode-tab active" data-mode="named">Named</button>
@@ -523,7 +523,7 @@ function turnToggle(){
   else turnStart();
 }
 
-const namedHint = 'Say „<b style="color:var(--ink)">Name start</b>" to start the timer, „<b style="color:var(--ink)">Name stop</b>" to stop it.';
+const namedHint = 'Say „<b style="color:var(--ink)">Name start</b>" or „<b style="color:var(--ink)">start Name</b>" to start the timer, „<b style="color:var(--ink)">Name stop</b>" or „<b style="color:var(--ink)">stop Name</b>" to stop it.';
 let turnWord = 'tango';
 let turnPauseWord = 'guacamole';
 
@@ -599,6 +599,22 @@ let micOn = false;
 let wantRunning = false;
 let recognitionLang = document.getElementById('langSelect').value;
 
+// mobile browsers cut speech recognition off if the screen dims/locks, which is a big
+// source of the mic repeatedly stopping/restarting; holding a screen wake lock while
+// listening prevents that. Not fatal if unsupported (e.g. desktop) or refused.
+let wakeLock = null;
+async function acquireWakeLock(){
+  if(!('wakeLock' in navigator)) return;
+  try{ wakeLock = await navigator.wakeLock.request('screen'); }catch(err){}
+}
+function releaseWakeLock(){
+  if(wakeLock){ wakeLock.release().catch(()=>{}); wakeLock = null; }
+}
+// wake locks are auto-released when the tab is hidden; re-acquire once it's visible again
+document.addEventListener('visibilitychange', () => {
+  if(wantRunning && document.visibilityState === 'visible') acquireWakeLock();
+});
+
 const startWords = ['start','begin','starte','beginn'];
 const stopWords = ['stop','end','stopp','ende','beende'];
 
@@ -606,8 +622,9 @@ const stopWords = ['stop','end','stopp','ende','beende'];
 function parseCommand(text){
   const t = text.trim().toLowerCase();
   let action = null;
-  if(startWords.some(w => t.endsWith(w) || t.includes(' '+w))) action = 'start';
-  else if(stopWords.some(w => t.endsWith(w) || t.includes(' '+w))) action = 'stop';
+  // word-boundary match anywhere in the phrase, so both "Name start" and "start Name" work
+  if(startWords.some(w => new RegExp('\\b'+w+'\\b').test(t))) action = 'start';
+  else if(stopWords.some(w => new RegExp('\\b'+w+'\\b').test(t))) action = 'stop';
   if(!action) return null;
 
   let namePart = t;
@@ -759,6 +776,7 @@ micBtn.onclick = () => {
       recognition.start();
       micOn = true;
       wantRunning = true;
+      acquireWakeLock();
       dot.classList.add('live');
       micStatus.textContent = 'Listening…';
       micBtn.textContent = 'Stop';
@@ -770,6 +788,7 @@ micBtn.onclick = () => {
     wantRunning = false;
     recognition.stop();
     micOn = false;
+    releaseWakeLock();
     micBtn.textContent = 'Start';
     micBtn.classList.remove('on');
   }
