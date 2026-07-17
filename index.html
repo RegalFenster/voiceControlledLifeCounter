@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Timer</title>
+<style>
+  :root{
+    --bg:#0f1410;
+    --panel:#171d18;
+    --line:#2a332b;
+    --ink:#eef2ea;
+    --dim:#8a998c;
+    --go:#5fb87a;
+    --stop:#c96a4a;
+    --mono:'JetBrains Mono','SF Mono',ui-monospace,Consolas,monospace;
+  }
+  *{box-sizing:border-box;}
+  button:focus-visible, input:focus-visible{
+    outline:2px solid var(--go);
+    outline-offset:2px;
+  }
+  button:focus:not(:focus-visible), input:focus:not(:focus-visible){
+    outline:none;
+  }
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Inter',system-ui,-apple-system,sans-serif;
+    min-height:100vh;
+    padding:20px 16px 60px;
+  }
+  h1{
+    font-family:var(--mono);
+    font-size:15px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--dim);
+    margin:0 0 4px;
+    font-weight:600;
+  }
+  .sub{
+    font-size:13px;
+    color:var(--dim);
+    margin-bottom:20px;
+    line-height:1.5;
+  }
+  .mic-row{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:14px 16px;
+    margin-bottom:16px;
+  }
+  .dot{
+    width:11px;height:11px;border-radius:50%;
+    background:#3a453c;
+    flex-shrink:0;
+    transition:background .2s, box-shadow .2s;
+  }
+  .dot.live{
+    background:var(--go);
+    box-shadow:0 0 0 4px rgba(95,184,122,.18);
+    animation:pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse{
+    0%,100%{box-shadow:0 0 0 4px rgba(95,184,122,.18);}
+    50%{box-shadow:0 0 0 8px rgba(95,184,122,.06);}
+  }
+  .mic-text{flex:1; font-size:14px;}
+  .mic-heard{font-family:var(--mono); font-size:12px; color:var(--dim); margin-top:2px; min-height:14px;}
+  button.mic-btn{
+    background:var(--ink); color:var(--bg); border:none;
+    padding:9px 16px; border-radius:7px; font-size:13px; font-weight:600;
+    cursor:pointer;
+  }
+  button.mic-btn.on{background:var(--stop); color:#fff;}
+
+  .settings-row{
+    display:flex; align-items:center; gap:10px;
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:12px 16px; margin-bottom:16px;
+    font-size:13px; color:var(--dim);
+  }
+  .settings-row input{
+    width:56px; background:var(--bg); border:1px solid var(--line);
+    color:var(--ink); padding:6px 8px; border-radius:6px; font-size:13px;
+    text-align:center;
+  }
+  .settings-row select{
+    background:var(--bg); border:1px solid var(--line);
+    color:var(--ink); padding:6px 8px; border-radius:6px; font-size:13px;
+  }
+
+  .add-row{
+    display:flex; gap:8px; margin-bottom:16px;
+  }
+  .add-row input{
+    flex:1; background:var(--panel); border:1px solid var(--line);
+    color:var(--ink); padding:11px 12px; border-radius:8px; font-size:14px;
+  }
+  .add-row button{
+    background:var(--panel); border:1px solid var(--line); color:var(--ink);
+    padding:11px 16px; border-radius:8px; font-size:14px; cursor:pointer;
+  }
+
+  .total-row{
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--panel); border:1px solid var(--line);
+    border-radius:8px; padding:12px 16px; margin-bottom:16px;
+  }
+  .total-row .label{font-size:13px; color:var(--dim);}
+  .total-row .ptime{font-family:var(--mono); font-size:20px; color:var(--ink); font-variant-numeric:tabular-nums;}
+
+  .person{
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-left:3px solid var(--line);
+    border-radius:8px;
+    padding:14px 16px;
+    margin-bottom:10px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    transition:border-color .2s;
+  }
+  .person.running{border-left-color:var(--go);}
+  .pname{font-size:15px; font-weight:600; margin-bottom:4px;}
+  .ptime{font-family:var(--mono); font-size:20px; color:var(--dim); font-variant-numeric:tabular-nums;}
+  .person.running .ptime{color:var(--go);}
+  .ptimes{display:flex; gap:16px;}
+  .ptime-block{display:flex; flex-direction:column;}
+  .ptime-label{font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:.06em; margin-bottom:2px;}
+  .ptime-block .ptime{font-size:17px;}
+  .pctrl{display:flex; gap:6px;}
+  .pctrl button{
+    border:none; border-radius:6px; padding:8px 12px; font-size:12px; font-weight:700;
+    cursor:pointer; text-transform:uppercase; letter-spacing:.04em;
+  }
+  .btn-start{background:var(--go); color:#0f1410;}
+  .btn-stop{background:var(--stop); color:#fff;}
+  .btn-del{background:transparent; color:var(--dim); border:1px solid var(--line) !important;}
+
+  .empty{color:var(--dim); font-size:13px; padding:20px 0; text-align:center;}
+</style>
+</head>
+<body>
+
+<h1>Voice Timer</h1>
+<div class="sub">Say „<b style="color:var(--ink)">Name start</b>" to start the timer, „<b style="color:var(--ink)">Name stop</b>" to stop it. <i>(Voice recognition only works in Chrome.)</i></div>
+
+<div class="total-row">
+  <span class="label">Total time</span>
+  <span class="ptime" id="totalTime">00:00:00</span>
+</div>
+
+<div class="mic-row">
+  <div class="dot" id="dot"></div>
+  <div class="mic-text">
+    <div id="micStatus">Microphone off</div>
+    <div class="mic-heard" id="heard"></div>
+  </div>
+  <button class="mic-btn" id="micBtn">Start</button>
+</div>
+
+<div class="settings-row">
+  <span>Auto-stop after</span>
+  <input type="number" id="autoStopInput" min="1" value="5">
+  <span>min per turn</span>
+</div>
+
+<div class="settings-row">
+  <span>Recognition language</span>
+  <select id="langSelect">
+    <option value="de-DE" selected>German</option>
+    <option value="en-US">English</option>
+  </select>
+</div>
+
+<div class="add-row">
+  <input type="text" id="nameInput" placeholder="Add name…" spellcheck="false" autocomplete="off">
+  <button id="addBtn">+ Add</button>
+</div>
+
+<div id="list"></div>
+
+<script>
+const state = { people: [], autoStopMs: 5*60*1000 }; // {id, name, running, elapsedMs, startedAt}
+let tickHandle = null;
+
+function fmt(ms){
+  const s = Math.floor(ms/1000);
+  const h = String(Math.floor(s/3600)).padStart(2,'0');
+  const m = String(Math.floor((s%3600)/60)).padStart(2,'0');
+  const sec = String(s%60).padStart(2,'0');
+  return `${h}:${m}:${sec}`;
+}
+
+function currentElapsed(p){
+  return p.elapsedMs + (p.running ? (Date.now() - p.startedAt) : 0);
+}
+
+function turnElapsed(p){
+  return p.running ? (Date.now() - p.startedAt) : (p.lastTurnMs || 0);
+}
+
+function beep(){
+  try{
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.frequency.value = 880;
+    g.gain.value = 0.15;
+    o.start();
+    setTimeout(()=>{ o.stop(); ctx.close(); }, 300);
+  }catch(e){}
+}
+
+function checkAutoStop(){
+  state.people.forEach(p => {
+    if(p.running && (Date.now() - p.startedAt) >= state.autoStopMs){
+      stopPerson(p.id);
+      beep();
+      heard.textContent = `⏱ "${p.name}" auto-stopped after ${document.getElementById('autoStopInput').value} min (this turn)`;
+    }
+  });
+}
+
+function render(){
+  const list = document.getElementById('list');
+  if(state.people.length === 0){
+    list.innerHTML = '<div class="empty">No names yet. Add one above.</div>';
+  } else {
+    list.innerHTML = state.people.map(p => `
+      <div class="person ${p.running?'running':''}">
+        <div>
+          <div class="pname">${p.name}</div>
+          <div class="ptimes">
+            <div class="ptime-block">
+              <span class="ptime-label">Turn</span>
+              <span class="ptime">${fmt(turnElapsed(p))}</span>
+            </div>
+            <div class="ptime-block">
+              <span class="ptime-label">Total</span>
+              <span class="ptime">${fmt(currentElapsed(p))}</span>
+            </div>
+          </div>
+        </div>
+        <div class="pctrl">
+          <button class="btn-start" onclick="startPerson('${p.id}')">Start</button>
+          <button class="btn-stop" onclick="stopPerson('${p.id}')">Stop</button>
+          <button class="btn-del" onclick="delPerson('${p.id}')">✕</button>
+        </div>
+      </div>
+    `).join('');
+  }
+  const total = state.people.reduce((sum,p)=>sum+currentElapsed(p),0);
+  document.getElementById('totalTime').textContent = fmt(total);
+}
+
+function tick(){
+  checkAutoStop();
+  render();
+}
+
+function ensureTick(){
+  if(tickHandle) return;
+  tickHandle = setInterval(tick, 500);
+}
+
+function findByName(name){
+  const norm = name.trim().toLowerCase();
+  return state.people.find(p => p.name.toLowerCase() === norm);
+}
+
+function addPerson(name){
+  if(!name || !name.trim()) return;
+  if(findByName(name)) return;
+  state.people.push({id: crypto.randomUUID(), name: name.trim(), running:false, elapsedMs:0, startedAt:null, lastTurnMs:0});
+  render();
+}
+
+function startPerson(id){
+  const p = state.people.find(x=>x.id===id);
+  if(!p || p.running) return;
+  p.running = true;
+  p.startedAt = Date.now();
+  ensureTick();
+  render();
+}
+
+function stopPerson(id){
+  const p = state.people.find(x=>x.id===id);
+  if(!p || !p.running) return;
+  const turnMs = Date.now() - p.startedAt;
+  p.elapsedMs += turnMs;
+  p.lastTurnMs = turnMs;
+  p.running = false;
+  p.startedAt = null;
+  render();
+}
+
+function delPerson(id){
+  state.people = state.people.filter(x=>x.id!==id);
+  render();
+}
+
+document.getElementById('addBtn').onclick = () => {
+  const input = document.getElementById('nameInput');
+  addPerson(input.value);
+  input.value = '';
+};
+document.getElementById('nameInput').addEventListener('keydown', e => {
+  if(e.key === 'Enter'){ addPerson(e.target.value); e.target.value=''; }
+});
+
+document.getElementById('autoStopInput').addEventListener('input', e => {
+  const minutes = Math.max(1, Number(e.target.value) || 1);
+  state.autoStopMs = minutes * 60 * 1000;
+});
+
+// --- Speech recognition ---
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+const micBtn = document.getElementById('micBtn');
+const micStatus = document.getElementById('micStatus');
+const heard = document.getElementById('heard');
+const dot = document.getElementById('dot');
+let recognition = null;
+let micOn = false;
+let wantRunning = false;
+let recognitionLang = document.getElementById('langSelect').value;
+
+const startWords = ['start','begin','starte','beginn'];
+const stopWords = ['stop','end','stopp','ende','beende'];
+
+// parses one transcript guess into {action, namePart}, or null if it's not a command
+function parseCommand(text){
+  const t = text.trim().toLowerCase();
+  let action = null;
+  if(startWords.some(w => t.endsWith(w) || t.includes(' '+w))) action = 'start';
+  else if(stopWords.some(w => t.endsWith(w) || t.includes(' '+w))) action = 'stop';
+  if(!action) return null;
+
+  let namePart = t;
+  [...startWords, ...stopWords].forEach(w=>{
+    namePart = namePart.replace(new RegExp('\\b'+w+'\\b','g'), '');
+  });
+  namePart = namePart.trim();
+  if(!namePart) return null;
+  return {action, namePart};
+}
+
+function findPersonForName(namePart){
+  let person = findByName(namePart);
+  if(person) return person;
+  return state.people.find(p => namePart.includes(p.name.toLowerCase()) || p.name.toLowerCase().includes(namePart));
+}
+
+// tries every alternative guess the recognizer offers (not just its top pick) and
+// uses the first one that matches an already-known name, since misheard top guesses
+// ("two" -> "to") are often correct further down the alternatives list
+function processAlternatives(alts){
+  heard.textContent = '„' + alts[0] + '"';
+
+  let fallbackCreate = null;
+  for(let i=0; i<alts.length; i++){
+    const parsed = parseCommand(alts[i]);
+    if(!parsed) continue;
+    const person = findPersonForName(parsed.namePart);
+    if(person){
+      if(parsed.action === 'start') startPerson(person.id);
+      else stopPerson(person.id);
+      return;
+    }
+    if(i===0 && parsed.action === 'start' && !fallbackCreate) fallbackCreate = parsed;
+  }
+  if(fallbackCreate){
+    addPerson(fallbackCreate.namePart.replace(/\b\w/g, c=>c.toUpperCase()));
+    const person = findByName(fallbackCreate.namePart);
+    if(person) startPerson(person.id);
+  }
+}
+
+function setupRecognition(){
+  recognition = new SpeechRec();
+  recognition.lang = recognitionLang;
+  recognition.continuous = true;
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 5;
+
+  recognition.onresult = (e) => {
+    const last = e.results[e.results.length-1];
+    if(last.isFinal){
+      const alts = [];
+      for(let i=0; i<last.length; i++) alts.push(last[i].transcript);
+      processAlternatives(alts);
+    }
+  };
+  recognition.onerror = (e) => {
+    micStatus.textContent = 'Error: ' + e.error;
+  };
+  recognition.onend = () => {
+    if(wantRunning){
+      // browsers auto-stop after a while; restart
+      try{ recognition.start(); }catch(err){}
+    } else {
+      dot.classList.remove('live');
+      micStatus.textContent = 'Microphone off';
+    }
+  };
+}
+
+document.getElementById('langSelect').addEventListener('change', e => {
+  recognitionLang = e.target.value;
+  if(recognition) recognition.lang = recognitionLang;
+});
+
+micBtn.onclick = () => {
+  if(!SpeechRec){
+    micStatus.textContent = 'Speech recognition is not supported by this browser.';
+    return;
+  }
+  if(!recognition) setupRecognition();
+
+  if(!micOn){
+    try{
+      recognition.start();
+      micOn = true;
+      wantRunning = true;
+      dot.classList.add('live');
+      micStatus.textContent = 'Listening…';
+      micBtn.textContent = 'Stop';
+      micBtn.classList.add('on');
+    }catch(err){
+      micStatus.textContent = 'Access failed: ' + err.message;
+    }
+  } else {
+    wantRunning = false;
+    recognition.stop();
+    micOn = false;
+    micBtn.textContent = 'Start';
+    micBtn.classList.remove('on');
+  }
+};
+
+render();
+</script>
+</body>
+</html>
