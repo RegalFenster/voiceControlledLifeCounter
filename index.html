@@ -751,7 +751,18 @@ function setupRecognition(){
       try{
         recognition.start();
         micStatus.textContent = 'Listening…';
-      }catch(err){}
+      }catch(err){
+        // on Android, start() right after onend can throw InvalidStateError because the
+        // previous session hasn't fully torn down yet - a short delay lets it settle,
+        // without this the mic silently stays off despite wantRunning still being true
+        setTimeout(() => {
+          if(!wantRunning) return;
+          try{
+            recognition.start();
+            micStatus.textContent = 'Listening…';
+          }catch(err2){}
+        }, 300);
+      }
     } else {
       dot.classList.remove('live');
       micStatus.textContent = 'Microphone off';
